@@ -1,77 +1,90 @@
 <?php
-/**
- * Plugin Name: WP Admin IP Restrictor
- * Description: Restricts wp-admin and wp-login.php access to specific IP addresses. Manage IPs from the settings page.
- * Version: 1.0
- * Author: Md. Salman
- */
+/*
+Plugin Name: S WP Admin Guard
+Description: Restrict wp-admin and wp-login access by IP, log attempts, email alerts, and redirect denied access.
+Version: 2.2
+Author: Md. Salman
+*/
 
-add_action('admin_menu', 'wp_admin_ip_restrictor_menu');
-function wp_admin_ip_restrictor_menu() {
-    add_options_page('Admin IP Restrictor', 'Admin IP Restrictor', 'manage_options', 'wp-admin-ip-restrictor', 'wp_admin_ip_restrictor_settings_page');
-}
+defined('ABSPATH') or die('No script kiddies please!');
 
-function wp_admin_ip_restrictor_settings_page() {
-    ?>
-    <div class="wrap">
-        <h2>Allowed IP Addresses for Admin Access</h2>
-        <form method="post" action="options.php">
-            <?php
-                settings_fields('wp_admin_ip_restrictor_group');
-                do_settings_sections('wp-admin-ip-restrictor');
-                submit_button();
-            ?>
-        </form>
-    </div>
-    <?php
-}
+// Paths
+define('SWPAG_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('SWPAG_LOG_FILE', SWPAG_PLUGIN_DIR . 'access-log.txt');
 
-add_action('admin_init', 'wp_admin_ip_restrictor_settings');
-function wp_admin_ip_restrictor_settings() {
-    register_setting('wp_admin_ip_restrictor_group', 'wp_allowed_ips', 'sanitize_textarea_field');
+// Activate plugin and add installer IP
+register_activation_hook(__FILE__, function () {
+    $options = get_option('swpag_settings', []);
+    if (!isset($options['allowed_ips']) || empty($options['allowed_ips'])) {
+        $installer_ip = $_SERVER['REMOTE_ADDR'];
+        $options['allowed_ips'] = [$installer_ip];
+        $options['email_alert'] = false;
+        $options['redirect_url'] = '';
+        update_option('swpag_settings', $options);
+    }
+});
 
-    add_settings_section('wp_ip_section', '', null, 'wp-admin-ip-restrictor');
+// Admin menu
+add_action('admin_menu', function () {
+    add_menu_page('S WP Admin Guard', 'S WP Admin Guard', 'manage_options', 'swp-admin-guard', 'swpag_settings_page');
+});
 
-    add_settings_field(
-        'wp_allowed_ips',
-        'Enter one IP per line',
-        'wp_ip_field_html',
-        'wp-admin-ip-restrictor',
-        'wp_ip_section'
-    );
-}
+// Settings page
+function swpag_settings_page() {
+    $options = get_option('swpag_settings', [
+        'allowed_ips' => [],
+        'email_alert' => false,
+        'redirect_url' => ''
+    ]);
 
-function wp_ip_field_html() {
-    $ips = get_option('wp_allowed_ips', '');
-    echo '<textarea name="wp_allowed_ips" rows="10" cols="50" class="large-text code">' . esc_textarea($ips) . '</textarea>';
-}
-
-// Hook to update .htaccess after IP change
-add_action('update_option_wp_allowed_ips', 'wp_write_htaccess_rules', 10, 2);
-
-function wp_write_htaccess_rules($old_value, $new_value) {
-    $ip_list = explode("\n", $new_value);
-    $clean_ips = array_filter(array_map('trim', $ip_list));
-
-    $rules = "\n# BEGIN WP ADMIN IP RESTRICTOR\n";
-    $rules .= "<IfModule mod_rewrite.c>\n";
-    $rules .= "RewriteEngine On\n";
-    $rules .= "RewriteCond %{REQUEST_URI} ^/(wp-admin|wp-login\\.php)\n";
-
-    foreach ($clean_ips as $ip) {
-        $rules .= "RewriteCond %{REMOTE_ADDR} !=$ip\n";
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_admin_referer('swpag_save_settings')) {
+        $options['allowed_ips'] = array_map('trim', explode("
+", $_POST['allowed_ips']));
+        $options['email_alert'] = isset($_POST['email_alert']);
+        $options['redirect_url'] = esc_url_raw($_POST['redirect_url']);
+        update_option('swpag_settings', $options);
+        echo '<div class="updated"><p>Settings saved.</p></div>';
     }
 
-    $rules .= "RewriteRule ^(.*)$ - [R=403,L]\n";
-    $rules .= "</IfModule>\n";
-    $rules .= "# END WP ADMIN IP RESTRICTOR\n";
-
-    $htaccess_path = ABSPATH . '.htaccess';
-
-    if (file_exists($htaccess_path) && is_writable($htaccess_path)) {
-        $content = file_get_contents($htaccess_path);
-        $content = preg_replace('/# BEGIN WP ADMIN IP RESTRICTOR.*?# END WP ADMIN IP RESTRICTOR/s', '', $content);
-        $content .= $rules;
-        file_put_contents($htaccess_path, $content);
-    }
+    $allowed_ips = implode("\n", $options['allowed_ips']);
+    $email_alert = $options['email_alert'] ? 'checked' : '';
+    $redirect_url = esc_attr($options['redirect_url']);
+    $log_url = plugins_url('access-log.txt', __FILE__);
+    echo '<div class="wrap"><h1>S WP Admin Guard</h1>
+        <form method="post">';
+    wp_nonce_field('swpag_save_settings');
+    echo "<p><label><strong>Allowed IPs (one per line):</strong><br><textarea name='allowed_ips' rows='5' cols='40'>{$allowed_ips}</textarea></label></p>
+        <p><label><input type='checkbox' name='email_alert' {$email_alert}> Enable Email Alerts</label></p>
+        <p><label>Redirect URL for Blocked Access:<br><input type='url' name='redirect_url' value='{$redirect_url}' style='width: 300px'></label></p>
+        <p><input type='submit' class='button-primary' value='Save Settings'></p>
+        <p><a href='{$log_url}' download>Download Log File</a></p>
+        </form></div>";
 }
+
+// Block unauthorized IPs
+add_action('init', function () {
+    if (is_admin() && !defined('DOING_AJAX')) {
+        $options = get_option('swpag_settings', ['allowed_ips' => []]);
+        $allowed_ips = $options['allowed_ips'] ?? [];
+        $user_ip = $_SERVER['REMOTE_ADDR'];
+        if (!in_array($user_ip, $allowed_ips)) {
+            $timestamp = date("Y-m-d H:i:s");
+            $log = "[{$timestamp}] Blocked IP: {$user_ip} -> {$_SERVER['REQUEST_URI']}
+";
+            file_put_contents(SWPAG_LOG_FILE, $log, FILE_APPEND);
+
+            if (!empty($options['email_alert'])) {
+                wp_mail(get_option('admin_email'), 'Blocked Admin Access Attempt', $log);
+            }
+
+            $redirect_url = $options['redirect_url'];
+            if (!empty($redirect_url)) {
+                wp_redirect($redirect_url);
+            } else {
+                wp_die('Access Denied. You are not allowed to access this page.');
+            }
+            exit;
+        }
+    }
+});
+?>
