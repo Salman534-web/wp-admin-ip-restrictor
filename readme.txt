@@ -1,45 +1,27 @@
-
-=== WP Admin IP Restrictor ===
+=== S WP Admin Guard ===
 Contributors: Md. Salman
-Tags: security, admin access, ip restrict, wp-admin, login protection
+Tags: admin security, IP block, access control, wp-admin protect, wp-login security
 Requires at least: 5.0
 Tested up to: 6.5
-Stable tag: 1.0
-License: GPLv2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Stable tag: 2.2
 
-Restrict wp-admin and wp-login.php access to specific IP addresses. Manage allowed IPs from the WordPress dashboard.
+Restrict wp-admin and wp-login.php access by IP. Log unauthorized attempts, enable email alerts, and customize redirect for denied access.
 
 == Description ==
-This plugin helps secure your WordPress site by restricting access to the admin dashboard (`/wp-admin`) and login page (`/wp-login.php`) based on allowed IP addresses. All other IPs will receive a 403 Forbidden error.
-
-**Features:**
-- Admin settings page under "Settings > Admin IP Restrictor"
-- Add one IP address per line
-- Automatically updates your site's .htaccess file with the correct rules
+- Only allow selected IPs to access wp-admin and wp-login.php.
+- Logs all unauthorized access attempts.
+- Sends email alert when access is denied (optional).
+- Dashboard option to set allowed IPs, toggle alerts, and set redirect URL.
+- Download logs easily.
 
 == Installation ==
-1. Upload the plugin ZIP via WordPress Dashboard > Plugins > Add New > Upload Plugin
-2. Activate the plugin.
-3. Go to **Settings > Admin IP Restrictor**
-4. Enter the IP addresses (one per line) that should have access to wp-admin and wp-login.php
-5. Save changes.
-
-== Important Notes ==
-- Ensure your `.htaccess` file is writable by the server.
-- Always add your own IP before saving to avoid locking yourself out.
-- If you get locked out, access your site via FTP or File Manager and manually edit or remove the `.htaccess` rules.
-
-== Frequently Asked Questions ==
-= How do I find my IP address? =
-Visit https://whatismyipaddress.com or search "what is my IP" in Google.
-
-= Can I add multiple IPs? =
-Yes. Enter one IP per line in the settings textarea.
-
-= What happens if someone not on the list tries to access the admin panel? =
-They will receive a **403 Forbidden** response.
+1. Upload the plugin folder to `/wp-content/plugins/`.
+2. Activate the plugin via the Plugins menu in WordPress.
+3. Go to "S WP Admin Guard" from Dashboard to configure settings.
 
 == Changelog ==
-= 1.0 =
-* Initial release
+= 2.2 =
+* Auto-whitelist the IP used during installation.
+* Redirect option for denied access.
+* Log download from dashboard.
+
